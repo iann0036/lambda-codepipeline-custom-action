@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Example stack for Lambda-backed custom action type provider for CodePipeline.
+
+Parameters:
+
+    ProviderName:
+        Description: The name of the custom provider
+        Type: String
+        MinLength: 1
+
+    ProviderCategory:
+        Description: The category of the custom provider
+        Type: String
+        AllowedValues:
+          - Source
+          - Build
+          - Deploy
+          - Test
+          - Invoke
+          - Approval
+        Default: Invoke
+
+Resources:
+
+    CodePipelineCustomActionFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Code:
+                ZipFile: !Sub |
+                    import boto3
+                    import pprint
+
+                    def handler(event, context):
+                        client = boto3.client('codepipeline')
+
+                        job = client.poll_for_jobs(
+                            actionTypeId={
+                                'category': '${ProviderCategory}',
+                                'owner': 'Custom',
+                                'provider': '${ProviderName}',
+                                'version': '1'
+                            },
+                            maxBatchSize=1
+                        )['jobs'][0]
+
+                        pprint.ppriunt(job)
+            Handler: index.handler
+            Role: !GetAtt 'LambdaExecutionRole.Arn'
+            Runtime: python3.6
+            Timeout: 900
+    
+    LambdaExecutionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Principal:
+                        Service:
+                          - lambda.amazonaws.com
+                    Action:
+                      - sts:AssumeRole
+            Path: /
+            Policies:
+              - PolicyName: root
+                PolicyDocument:
+                    Version: '2012-10-17'
+                    Statement:
+                      - Effect: Allow
+                        Action:
+                          - logs:CreateLogGroup
+                          - logs:CreateLogStream
+                          - logs:PutLogEvents
+                        Resource: arn:aws:logs:*:*:*
+                      - Effect: Allow
+                        Action:
+                          - codepipeline:PollForJobs
+                          - codepipeline:AcknowledgeJob
+                          - codepipeline:GetJobDetails
+                          - codepipeline:PutJobSuccessResult
+                          - codepipeline:PutJobFailureResult
+                        Resource: !Sub arn:aws:codepipeline:${AWS::Region}::actionType:custom/Build/*
+                      # Other required permissions here
+
+    CodePipelineCustomActionFunctionPermissions:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: 'lambda:InvokeFunction'
+            FunctionName: !GetAtt CodePipelineCustomActionFunction.Arn
+            Principal: 'events.amazonaws.com'
+    
+    CodePipelineCustomActionTrigger:
+        Type: "AWS::Events::Rule"
+        Properties:
+            State: "ENABLED"
+            Description: !Sub "Handles the ${ProviderName} custom provider for CodePipeline."
+            EventPattern: !Sub |
+                {
+                    "source": ["aws.codepipeline"],
+                    "detail-type": ["CodePipeline Action Execution State Change"],
+                    "detail": {
+                        "type": {
+                            "provider": ["${ProviderName}"]
+                        },
+                        "state": ["STARTED"]
+                    }
+                }
+            Targets: 
+              - 
+                Arn: !GetAtt CodePipelineCustomActionFunction.Arn
+                Id: "CodePipelineCustomActionTrigger"
+    
+    CodePipelineCustomActionType: 
+        Type: AWS::CodePipeline::CustomActionType
+        Properties: 
+            Category: !Ref ProviderCategory
+            Provider: !Ref ProviderName
+            Version: "1"
+            InputArtifactDetails: 
+                MaximumCount: 1
+                MinimumCount: 1
+            OutputArtifactDetails: 
+                MaximumCount: 1
+                MinimumCount: 0
