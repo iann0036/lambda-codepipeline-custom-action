@@ -44,7 +44,7 @@ Resources:
                             maxBatchSize=1
                         )['jobs'][0]
 
-                        pprint.ppriunt(job)
+                        pprint.pprint(job)
             Handler: index.handler
             Role: !GetAtt 'LambdaExecutionRole.Arn'
             Runtime: python3.6
@@ -81,9 +81,8 @@ Resources:
                           - codepipeline:GetJobDetails
                           - codepipeline:PutJobSuccessResult
                           - codepipeline:PutJobFailureResult
-                        Resource: !Sub arn:aws:codepipeline:${AWS::Region}::actionType:custom/Build/*
+                        Resource: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:actiontype:Custom/${ProviderCategory}/*
                       # Other required permissions here
-
     CodePipelineCustomActionFunctionPermissions:
         Type: AWS::Lambda::Permission
         Properties:
