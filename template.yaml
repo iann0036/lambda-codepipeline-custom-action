@@ -30,11 +30,14 @@ Resources:
                 ZipFile: !Sub |
                     import boto3
                     import pprint
+                    import logging
+
+                    boto3.set_stream_logger('', logging.DEBUG)
 
                     def handler(event, context):
-                        client = boto3.client('codepipeline')
+                        codepipeline_client = boto3.client('codepipeline')
 
-                        job = client.poll_for_jobs(
+                        job = codepipeline_client.poll_for_jobs(
                             actionTypeId={
                                 'category': '${ProviderCategory}',
                                 'owner': 'Custom',
@@ -43,8 +46,29 @@ Resources:
                             },
                             maxBatchSize=1
                         )['jobs'][0]
+                        
+                        codepipeline_client.acknowledge_job(
+                            jobId=job['id'],
+                            nonce=job['nonce']
+                        )
 
-                        pprint.pprint(job)
+                        try:
+                            print("Starting action...")
+                            # Section 1: Process action
+                            print("Finished action.")
+                        except:
+                            codepipeline_client.put_job_failure_result(
+                                jobId=job['id'],
+                                failureDetails={
+                                    'type': 'JobFailed',
+                                    'message': 'Exception in action process'
+                                }
+                            )
+                        codepipeline_client.put_job_success_result(
+                            jobId=job['id'],
+                            clientToken=XXXXXXXXXXXXXXXXX
+                        )
+            
             Handler: index.handler
             Role: !GetAtt 'LambdaExecutionRole.Arn'
             Runtime: python3.6
@@ -81,8 +105,9 @@ Resources:
                           - codepipeline:GetJobDetails
                           - codepipeline:PutJobSuccessResult
                           - codepipeline:PutJobFailureResult
-                        Resource: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:actiontype:Custom/${ProviderCategory}/*
-                      # Other required permissions here
+                        Resource: '*'
+                      # Section 2: Other required permissions here
+    
     CodePipelineCustomActionFunctionPermissions:
         Type: AWS::Lambda::Permission
         Properties:
@@ -107,8 +132,7 @@ Resources:
                     }
                 }
             Targets: 
-              - 
-                Arn: !GetAtt CodePipelineCustomActionFunction.Arn
+              - Arn: !GetAtt CodePipelineCustomActionFunction.Arn
                 Id: "CodePipelineCustomActionTrigger"
     
     CodePipelineCustomActionType: 

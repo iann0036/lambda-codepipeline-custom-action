@@ -1,2 +1,6 @@
-# lambda-codepipeline-custom-action
-Lambda-backed custom action type provider for CodePipeline.
+# Lambda-based CodePipeline Custom Action Provider
+
+![Architecture Diagram](arch.png)
+
+## Usage
+
