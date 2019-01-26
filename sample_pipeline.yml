@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Example CodePipeline stack that uses the custom provider.
+
+Parameters:
+
+    SourceDestS3Bucket:
+        Description: The name of the source/destination S3 bucket.
+        Type: String
+        MinLength: 1
+
+    SourceS3Key:
+        Description: The name of the source S3 key.
+        Type: String
+        MinLength: 1
+
+    DestS3Key:
+        Description: The name of the destination S3 key.
+        Type: String
+        MinLength: 1
+
+Resources:
+
+    ArtifactStoreBucket:
+        Type: AWS::S3::Bucket
+
+    CodePipelineServiceRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Principal:
+                        Service:
+                          - codepipeline.amazonaws.com
+                    Action:
+                      - sts:AssumeRole
+            Path: /
+            Policies:
+              - PolicyName: root
+                PolicyDocument:
+                    Version: '2012-10-17'
+                    Statement:
+                      - Effect: Allow
+                        Action:
+                          - s3:GetObject
+                          - s3:GetObjectVersion
+                          - s3:GetBucketVersioning
+                          - s3:PutObject
+                          - s3:ListBucket
+                          - s3:GetBucketPolicy
+                          - s3:GetObjectAcl
+                          - s3:PutObjectAcl
+                          - s3:DeleteObject
+                        Resource: '*'
+                      - Effect: Allow
+                        Action:
+                          - lambda:InvokeFunction
+                          - lambda:ListFunctions
+                        Resource: '*'
+                      - Effect: Allow
+                        Action:
+                          - codepipeline:*
+                        Resource: '*'
+
+    SamplePipeline:
+        Type: AWS::CodePipeline::Pipeline
+        Properties:
+            RoleArn: !GetAtt CodePipelineServiceRole.Arn
+            Stages:
+              - Name: Source
+                Actions:
+                  - Name: SourceAction
+                    ActionTypeId:
+                        Category: Source
+                        Owner: AWS
+                        Version: "1"
+                        Provider: S3
+                    OutputArtifacts:
+                      - Name: SourceOutput
+                    Configuration:
+                        S3Bucket: !Ref SourceDestS3Bucket
+                        S3ObjectKey: !Ref SourceS3Key
+                    RunOrder: 1
+              - Name: Release
+                Actions:
+                  - Name: Release
+                    InputArtifacts:
+                      - Name: SourceOutput
+                    ActionTypeId:
+                        Category: Deploy
+                        Owner: AWS
+                        Version: "1"
+                        Provider: S3
+                    Configuration:
+                        BucketName: !Ref SourceDestS3Bucket
+                        Extract: false
+                        ObjectKey: !Ref DestS3Key
+                    RunOrder: 1
+                  - Name: Notify
+                    InputArtifacts:
+                      - Name: SourceOutput
+                    ActionTypeId:
+                        Category: !ImportValue example-custom-provider-category
+                        Owner: Custom
+                        Version: "1"
+                        Provider: !ImportValue example-custom-provider-name
+                    RunOrder: 2
+            ArtifactStore:
+                Type: S3
+                Location: !Ref ArtifactStoreBucket

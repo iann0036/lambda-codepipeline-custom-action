@@ -4,10 +4,16 @@ Description: Example stack for Lambda-backed custom action type provider for Cod
 
 Parameters:
 
+    SlackWebhookUrl:
+        Description: The full webhook URL for Slack notifications
+        Type: String
+        MinLength: 1
+
     ProviderName:
         Description: The name of the custom provider
         Type: String
         MinLength: 1
+        Default: NotifyViaSlack
 
     ProviderCategory:
         Description: The category of the custom provider
@@ -29,10 +35,10 @@ Resources:
             Code:
                 ZipFile: !Sub |
                     import boto3
-                    import pprint
-                    import logging
-
-                    boto3.set_stream_logger('', logging.DEBUG)
+                    import os
+                    import json
+                    from urllib.request import Request, urlopen
+                    from urllib.error import URLError, HTTPError
 
                     def handler(event, context):
                         codepipeline_client = boto3.client('codepipeline')
@@ -54,7 +60,15 @@ Resources:
 
                         try:
                             print("Starting action...")
+
                             # Section 1: Process action
+                            slack_message = {
+                                'text': json.dumps(job).encode('utf-8')
+                            }
+                            req = Request(os.environ['SLACK_WEBHOOK_URL'], json.dumps(slack_message).encode('utf-8'))
+                            print(urlopen(req).read())
+                            # End Section 1
+
                             print("Finished action.")
                         except:
                             codepipeline_client.put_job_failure_result(
@@ -64,15 +78,20 @@ Resources:
                                     'message': 'Exception in action process'
                                 }
                             )
+                            return False
+                        
                         codepipeline_client.put_job_success_result(
-                            jobId=job['id'],
-                            clientToken=XXXXXXXXXXXXXXXXX
+                            jobId=job['id']
                         )
+                        return True
             
             Handler: index.handler
+            Environment:
+                Variables:
+                    SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
             Role: !GetAtt 'LambdaExecutionRole.Arn'
             Runtime: python3.6
-            Timeout: 900
+            Timeout: 30
     
     LambdaExecutionRole:
         Type: AWS::IAM::Role
@@ -145,5 +164,21 @@ Resources:
                 MaximumCount: 1
                 MinimumCount: 1
             OutputArtifactDetails: 
-                MaximumCount: 1
+                MaximumCount: 0
                 MinimumCount: 0
+
+Outputs:
+
+    ProviderName:
+        Description: A reference to the provider name
+        Value: !Ref ProviderName
+        Export:
+            Name: example-custom-provider-name
+
+    ProviderCategory:
+        Description: A reference to the provider category
+        Value: !Ref ProviderCategory
+        Export:
+            Name: example-custom-provider-category
+
+    
